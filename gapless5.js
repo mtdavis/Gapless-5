@@ -304,10 +304,9 @@ function Gapless5Source(parentPlayer, inContext, inOutputNode) {
  			// not using audio.networkState because it's not dependable on all browsers
 		}
 		// cancel if url doesn't exist, but don't download again
-		$.ajax({
-			url: inAudioPath,
-			type: "HEAD",
-		}).fail(function() { 
+		fetch(inAudioPath, {
+			method: 'HEAD',
+		}).catch(function() {
 			that.cancelRequest(true);
 		});
 	}
@@ -375,6 +374,7 @@ this.onnext = null;
 this.onerror = null;
 this.onfinishedtrack = null;
 this.onfinishedall = null;
+this.onpositionupdate = null;
 
 
 // INTERNAL HELPERS
@@ -423,11 +423,11 @@ var getTotalPositionText = function () {
 	return text;
 };
 
-var runCallback = function (cb) {
+var runCallback = function (cb, arg) {
 	if (cb)
 	{
 		inCallback = true;
-		cb();
+		cb(arg);
 		inCallback = false;
 	}
 };
@@ -485,7 +485,8 @@ this.setGain = function (uiPos) {
 
 this.scrub = function (uiPos) {
 	scrubPosition = getSoundPos(uiPos);
-	$("#currentPosition" + that.id).html(getFormattedTime(scrubPosition));
+	document.getElementById("currentPosition" + that.id).innerHTML = getFormattedTime(scrubPosition);
+	runCallback(that.onpositionupdate, scrubPosition / 1000);
 	enableButton('prev', that.loop || (trackIndex != 0 || scrubPosition != 0));
 	if (!isScrubbing)
 	{
@@ -495,10 +496,11 @@ this.scrub = function (uiPos) {
 
 this.setLoadedSpan = function(percent)
 {
-	$("#loaded-span" + that.id).width(percent * SCRUB_WIDTH);
+	document.getElementById("loaded-span" + that.id).style.setProperty(
+		'width', percent * SCRUB_WIDTH + 'px');
 	if (percent == 1)
 	{
-		$("#totalPosition" + that.id).html(getTotalPositionText());
+		document.getElementById("totalPosition" + that.id).innerHTML = getTotalPositionText();
 	}
 };
 
@@ -821,36 +823,36 @@ this.isPlaying = function () {
 var resetPosition = function(forceScrub) {
 	if (!forceScrub && sources[trackIndex].getPosition() == 0) return; // nothing else to do
 	that.scrub(0);
-	$("#transportbar" + that.id).val(0);
+	document.getElementById("transportbar" + that.id).value = 0;
 };
 
 var enableButton = function (buttonId, bEnable) {
 	if (bEnable)
 	{
-		$("#" + buttonId + that.id).removeClass('disabled');
-		$("#" + buttonId + that.id).addClass('enabled');
+		document.getElementById(buttonId + that.id).classList.remove('disabled');
+		document.getElementById(buttonId + that.id).classList.add('enabled');
 	}
 	else
 	{
-		$("#" + buttonId + that.id).removeClass('enabled');
-		$("#" + buttonId + that.id).addClass('disabled');
+		document.getElementById(buttonId + that.id).classList.remove('enabled');
+		document.getElementById(buttonId + that.id).classList.add('disabled');
 	}
 };
 
 var updateDisplay = function () {
 	if (numTracks() == 0)
 	{
-		$("#trackIndex" + that.id).html(0);
-		$("#tracks" + that.id).html(0);
-		$("#totalPosition" + that.id).html("00:00.00");
+		document.getElementById("trackIndex" + that.id).innerHTML = 0;
+		document.getElementById("tracks" + that.id).innerHTML = 0;
+		document.getElementById("totalPosition" + that.id).innerHTML = "00:00.00";
 		enableButton('prev', false);
 		enableButton('next', false);
 	}
 	else
 	{
-		$("#trackIndex" + that.id).html(trackIndex + 1);
-		$("#tracks" + that.id).html(numTracks());
-		$("#totalPosition" + that.id).html(getTotalPositionText());
+		document.getElementById("trackIndex" + that.id).innerHTML = trackIndex + 1;
+		document.getElementById("tracks" + that.id).innerHTML = numTracks();
+		document.getElementById("totalPosition" + that.id).innerHTML = getTotalPositionText();
 		enableButton('prev', that.loop || trackIndex > 0 || sources[trackIndex].getPosition() > 0);
 		enableButton('next', that.loop || trackIndex < that.tracks.length - 1);
 
@@ -873,7 +875,7 @@ var updateDisplay = function () {
 	}
 };
 
-var Tick = function(tickMS) {
+var Tick = function() {
 	if (numTracks() > 0)
 	{
 		sources[trackIndex].tick();
@@ -890,19 +892,20 @@ var Tick = function(tickMS) {
 				// playing track, update bar position
 				soundPos = scrubPosition;
 			}
-			$("#transportbar" + that.id).val(getUIPos());
-			$("#currentPosition" + that.id).html(getFormattedTime(soundPos));
+			document.getElementById("transportbar" + that.id).value = getUIPos();
+			document.getElementById("currentPosition" + that.id).innerHTML = getFormattedTime(soundPos);
+			runCallback(that.onpositionupdate, soundPos / 1000);
 		}
 	}
-	window.setTimeout(function () { Tick(tickMS); }, tickMS);
+	window.setTimeout(function () { Tick(); }, that.tickMS);
 };
 
 var PlayerHandle = function() {
 	return "GAPLESS5_PLAYERS[" + that.id + "]";
 };
 
-var Init = function(elem_id, options, tickMS) {
-	if ($("#" + elem_id).length == 0)
+var Init = function(elem_id, options) {
+	if (document.getElementById(elem_id) === null)
 	{
 		console.log("ERROR in Gapless5: no element with id '" + elem_id + "' exists!");
 		return;
@@ -910,7 +913,7 @@ var Init = function(elem_id, options, tickMS) {
 	GAPLESS5_PLAYERS[that.id] = that;
 
 	// generate html for player
-	player_html = '<div class="g5position">';
+	var player_html = '<div class="g5position">';
 	player_html += '<span id="currentPosition' + that.id + '">00:00.00</span> | <span id="totalPosition' + that.id + '">' + LOAD_TEXT + '</span>';
 	player_html += ' | <span id="trackIndex' + that.id + '">1</span>/<span id="tracks' + that.id + '">1</span>';
 	player_html += '</div>';
@@ -920,7 +923,7 @@ var Init = function(elem_id, options, tickMS) {
 	{
 		player_html += 'This player is not supported by your browser.';
 		player_html += '</div>';
-		$("#" + elem_id).html(player_html);
+		document.getElementById(elem_id).innerHTML = player_html;
 		return;
 	}
 	player_html += '<div class="g5transport">';
@@ -949,31 +952,31 @@ var Init = function(elem_id, options, tickMS) {
 		player_html += '</div>';
 	}
 	player_html += '</div>';
-	$("#" + elem_id).html(player_html);
+	document.getElementById(elem_id).innerHTML = player_html;
 
 	// css adjustments
 	if (!isMobileBrowser && navigator.userAgent.indexOf('Mac OS X') == -1)
 	{
-		$("#transportbar" + that.id).addClass("g5meter-1pxup");
-		$("#g5buttons" + that.id).addClass("g5buttons-1pxup");
+		document.getElementById("transportbar" + that.id).classList.add("g5meter-1pxup");
+		document.getElementById("g5buttons" + that.id).classList.add("g5buttons-1pxup");
 	}
 	if (isMobileBrowser)
 	{
-		$("#transportbar" + that.id).addClass("g5transport-1pxup");
+		document.getElementById("transportbar" + that.id).classList.add("g5transport-1pxup");
 	}
 
 	// set up button mappings
-	$('#prev' + that.id)[0].addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].prev);
-	$('#play' + that.id)[0].addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].playpause);
-	$('#stop' + that.id)[0].addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].stop);
-	$('#next' + that.id)[0].addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].next);
+	document.getElementById('prev' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].prev);
+	document.getElementById('play' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].playpause);
+	document.getElementById('stop' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].stop);
+	document.getElementById('next' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].next);
 
 	// set up key mappings
 	if (options != null && 'mapKeys' in options)
 	{
 		that.mapKeys(options['mapKeys']);
 	}
-	$(window).keydown(function(e){
+	window.addEventListener("keydown", function(e){
 		var keycode = e.keyCode;
     	if (keycode in keyMappings)
     	{
@@ -981,7 +984,7 @@ var Init = function(elem_id, options, tickMS) {
     	}
 	});
 
-	SCRUB_WIDTH = $("#transportbar" + that.id).width();
+	SCRUB_WIDTH = document.getElementById("transportbar" + that.id).getBoundingClientRect().width;
 	enableButton('play', true);
 	enableButton('stop', true);
 
@@ -1010,9 +1013,16 @@ var Init = function(elem_id, options, tickMS) {
 	{
 		sources[trackIndex].play();
 	}
-	Tick(tickMS);
+	Tick();
 };
 
-$(document).ready(Init(elem_id, options, this.tickMS));
+if(document.readyState !== 'loading') {
+	Init(elem_id, options)	
+}
+else {
+	document.addEventListener("DOMContentLoaded", () => Init(elem_id, options));
+}
 
 };
+
+export default Gapless5;
