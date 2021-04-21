@@ -26,7 +26,6 @@ window.hasWebKit = ('webkitAudioContext' in window) && !('chrome' in window);
 var gapless5AudioContext = (window.hasWebKit) ? new webkitAudioContext() : (typeof AudioContext != "undefined") ? new AudioContext() : null;
 
 
-var GAPLESS5_PLAYERS = {};
 var Gapless5State = {
 	"None"    : 0,
 	"Loading" : 1,
@@ -252,7 +251,6 @@ function Gapless5Source(parentPlayer, inContext, inOutputNode) {
 			if (loadedPercent != newPercent)
 			{
 				loadedPercent = newPercent;
-				parent.setLoadedSpan(loadedPercent)
 			}
 		}
 	}
@@ -318,7 +316,7 @@ function Gapless5Source(parentPlayer, inContext, inOutputNode) {
 //   playOnLoad (default = false): play immediately
 //   useWebAudio (default = true)
 //   useHTML5Audio (default = false on mobile browsers, true otherwise)
-var Gapless5 = function(elem_id, options) {
+var Gapless5 = function(options) {
 
 // MEMBERS AND CONSTANTS
 
@@ -332,7 +330,6 @@ this.tickMS = 27; // fast enough for numbers to look real-time
 var SCRUB_RESOLUTION = 65535;
 var SCRUB_WIDTH = 0;
 var scrubPosition = 0;
-var isScrubbing = false;
 var LOAD_TEXT = "loading..."
 var ERROR_TEXT = "error!"
 
@@ -359,10 +356,8 @@ var sources = [];
 
 // Callback and Execution logic
 var inCallback = false;
-var firstUICallback = true;
 var that = this;
 var isPlayButton = true;
-var keyMappings = {};
 
 // Callbacks
 this.onprev = null;
@@ -379,48 +374,12 @@ this.onpositionupdate = null;
 
 // INTERNAL HELPERS
 
-var getUIPos = function () {
-	var position = isScrubbing ? scrubPosition : sources[trackIndex].getPosition();
-	return (position / sources[trackIndex].getLength()) * SCRUB_RESOLUTION;
-};
-
 var getSoundPos = function (uiPosition) {
 	return ((uiPosition / SCRUB_RESOLUTION) * sources[trackIndex].getLength());
 };
 
 var numTracks = function () {
 	return that.tracks.length;
-};
-
-var getFormattedTime = function (inMS) {
-    var minutes = Math.floor(inMS / 60000);
-    var seconds_full = (inMS - (minutes * 60000)) / 1000;
-    var seconds = Math.floor(seconds_full);
-    var csec = Math.floor((seconds_full - seconds) * 100);
-    
-    if (minutes < 10) { minutes = "0" + minutes; }
-    if (seconds < 10) { seconds = "0" + seconds; }
-    if (csec < 10) { csec = "0" + csec; }
-    
-    return minutes + ':' + seconds + '.' + csec;
-};
-
-var getTotalPositionText = function () {
-	var text = LOAD_TEXT;
-	var srcLength = sources[trackIndex].getLength();
-	if (that.tracks.length == 0)
-	{
-		text = getFormattedTime(0);
-	}
-	else if (sources[trackIndex].getState() == Gapless5State.Error)
-	{
-		text = ERROR_TEXT;
-	}
-	else if (srcLength > 0)
-	{
-		text = getFormattedTime(srcLength);
-	}
-	return text;
 };
 
 var runCallback = function (cb, arg) {
@@ -434,48 +393,6 @@ var runCallback = function (cb, arg) {
 
 // (PUBLIC) ACTIONS
 
-this.mapKeys = function (options) {
-	for (var key in options)
-	{
-		var uppercode = options[key].toUpperCase().charCodeAt(0);
-		var lowercode = options[key].toLowerCase().charCodeAt(0);
-		var linkedfunc = null;
-		var player = GAPLESS5_PLAYERS[that.id];
-		switch (key)
-		{
-			case "cue":
-				linkedfunc = player.cue;
-				break;
-			case "play":
-				linkedfunc = player.play;
-				break;
-			case "pause":
-				linkedfunc = player.pause;
-				break;
-			case "playpause":
-				linkedfunc = player.playpause;
-				break;
-			case "stop":
-				linkedfunc = player.stop;
-				break;
-			case "prevtrack":
-				linkedfunc = player.prevtrack;
-				break;
-			case "prev":
-				linkedfunc = player.prev;
-				break;
-			case "next":
-				linkedfunc = player.next;
-				break;
-		}
-		if (linkedfunc != null)
-		{
-			keyMappings[uppercode] = linkedfunc;
-			keyMappings[lowercode] = linkedfunc;
-		}
-	}
-};
-
 this.setGain = function (uiPos) {
 	var normalized = uiPos / SCRUB_RESOLUTION;
 	//var power_range = Math.sin(normalized * 0.5*Math.PI);
@@ -485,23 +402,8 @@ this.setGain = function (uiPos) {
 
 this.scrub = function (uiPos) {
 	scrubPosition = getSoundPos(uiPos);
-	document.getElementById("currentPosition" + that.id).innerHTML = getFormattedTime(scrubPosition);
 	runCallback(that.onpositionupdate, scrubPosition / 1000);
-	enableButton('prev', that.loop || (trackIndex != 0 || scrubPosition != 0));
-	if (!isScrubbing)
-	{
-		sources[trackIndex].setPosition(scrubPosition, true);
-	}
-};
-
-this.setLoadedSpan = function(percent)
-{
-	document.getElementById("loaded-span" + that.id).style.setProperty(
-		'width', percent * SCRUB_WIDTH + 'px');
-	if (percent == 1)
-	{
-		document.getElementById("totalPosition" + that.id).innerHTML = getTotalPositionText();
-	}
+	sources[trackIndex].setPosition(scrubPosition, true);
 };
 
 this.onEndedCallback = function() {
@@ -537,23 +439,6 @@ this.dequeueNextLoad = function() {
 	}
 }
 
-this.onStartedScrubbing = function () {
-	isScrubbing = true;
-};
-
-this.onFinishedScrubbing = function () {
-	isScrubbing = false;
-	var newPosition = scrubPosition;
-	if (sources[trackIndex].inPlayState() && newPosition >= sources[trackIndex].getLength())
-	{
-		that.next(true);
-	}
-	else
-	{
-		sources[trackIndex].setPosition(newPosition, true);
-	}
-};
-
 this.loadQueue = [];
 
 this.addTrack = function (audioPath) {
@@ -564,10 +449,6 @@ this.addTrack = function (audioPath) {
 	if (loadingTrack == -1)
 	{
 		that.dequeueNextLoad();
-	}
-	if (initialized)
-	{
-		updateDisplay();
 	}
 };
 
@@ -594,7 +475,6 @@ this.insertTrack = function (index, audioPath) {
 			}
 		}
 		that.loadQueue.splice(0,0,[index,audioPath]);
-		updateDisplay();
 	}
 };
 
@@ -634,10 +514,6 @@ this.removeTrack = function (index) {
 	{
 		that.dequeueNextLoad();
 	}
-	if (initialized)
-	{
-		updateDisplay();
-	}
 };
 
 this.replaceTrack = function (index, audioPath) {
@@ -658,10 +534,6 @@ this.removeAllTracks = function () {
 	sources = [];
 	that.tracks = [];
 	that.loadQueue = [];
-	if (initialized)
-	{
-		updateDisplay();
-	}
 };
 
 this.gotoTrack = function (newIndex, bForcePlay) {
@@ -702,7 +574,6 @@ this.gotoTrack = function (newIndex, bForcePlay) {
 				that.loadQueue.push(entry);
 			}
 		}
-		updateDisplay();
 		
 		if ((bForcePlay == true) || sources[oldIndex].isPlayActive())
 		{
@@ -711,8 +582,6 @@ this.gotoTrack = function (newIndex, bForcePlay) {
 		sources[oldIndex].stop(); // call this last
 
 	}
-	enableButton('prev', that.loop || (newIndex > 0));
-	enableButton('next', that.loop || (newIndex < that.tracks.length - 1));
 };
 
 this.prevtrack = function (e) {
@@ -823,56 +692,6 @@ this.isPlaying = function () {
 var resetPosition = function(forceScrub) {
 	if (!forceScrub && sources[trackIndex].getPosition() == 0) return; // nothing else to do
 	that.scrub(0);
-	document.getElementById("transportbar" + that.id).value = 0;
-};
-
-var enableButton = function (buttonId, bEnable) {
-	if (bEnable)
-	{
-		document.getElementById(buttonId + that.id).classList.remove('disabled');
-		document.getElementById(buttonId + that.id).classList.add('enabled');
-	}
-	else
-	{
-		document.getElementById(buttonId + that.id).classList.remove('enabled');
-		document.getElementById(buttonId + that.id).classList.add('disabled');
-	}
-};
-
-var updateDisplay = function () {
-	if (numTracks() == 0)
-	{
-		document.getElementById("trackIndex" + that.id).innerHTML = 0;
-		document.getElementById("tracks" + that.id).innerHTML = 0;
-		document.getElementById("totalPosition" + that.id).innerHTML = "00:00.00";
-		enableButton('prev', false);
-		enableButton('next', false);
-	}
-	else
-	{
-		document.getElementById("trackIndex" + that.id).innerHTML = trackIndex + 1;
-		document.getElementById("tracks" + that.id).innerHTML = numTracks();
-		document.getElementById("totalPosition" + that.id).innerHTML = getTotalPositionText();
-		enableButton('prev', that.loop || trackIndex > 0 || sources[trackIndex].getPosition() > 0);
-		enableButton('next', that.loop || trackIndex < that.tracks.length - 1);
-
-		if (sources[trackIndex].inPlayState())
-		{
-			enableButton('play', false);
-			isPlayButton = false;
-		}
-		else
-		{
-			enableButton('play', true);
-			isPlayButton = true;
-
-			if (sources[trackIndex].getState() == Gapless5State.Error)
-			{
-				runCallback(that.onerror);
-			}
-		}
-		sources[trackIndex].uiDirty = false;
-	}
 };
 
 var Tick = function() {
@@ -880,114 +699,16 @@ var Tick = function() {
 	{
 		sources[trackIndex].tick();
 
-		if (sources[trackIndex].uiDirty)
-		{
-			updateDisplay();
-		}
 		if (sources[trackIndex].inPlayState())
 		{
 			var soundPos = sources[trackIndex].getPosition();
-			if (isScrubbing)
-			{
-				// playing track, update bar position
-				soundPos = scrubPosition;
-			}
-			document.getElementById("transportbar" + that.id).value = getUIPos();
-			document.getElementById("currentPosition" + that.id).innerHTML = getFormattedTime(soundPos);
 			runCallback(that.onpositionupdate, soundPos / 1000);
 		}
 	}
 	window.setTimeout(function () { Tick(); }, that.tickMS);
 };
 
-var PlayerHandle = function() {
-	return "GAPLESS5_PLAYERS[" + that.id + "]";
-};
-
-var Init = function(elem_id, options) {
-	if (document.getElementById(elem_id) === null)
-	{
-		console.log("ERROR in Gapless5: no element with id '" + elem_id + "' exists!");
-		return;
-	}
-	GAPLESS5_PLAYERS[that.id] = that;
-
-	// generate html for player
-	var player_html = '<div class="g5position">';
-	player_html += '<span id="currentPosition' + that.id + '">00:00.00</span> | <span id="totalPosition' + that.id + '">' + LOAD_TEXT + '</span>';
-	player_html += ' | <span id="trackIndex' + that.id + '">1</span>/<span id="tracks' + that.id + '">1</span>';
-	player_html += '</div>';
-	
-	player_html += '<div class="g5inside">';
-	if (typeof Audio == "undefined")
-	{
-		player_html += 'This player is not supported by your browser.';
-		player_html += '</div>';
-		document.getElementById(elem_id).innerHTML = player_html;
-		return;
-	}
-	player_html += '<div class="g5transport">';
-	player_html += '<div class="g5meter"><span id="loaded-span' + that.id + '" style="width: 0%"></span></div>';
-
-	player_html += '<input type="range" class="transportbar" name="transportbar" id="transportbar' + that.id + '" ';
-	player_html += 'min="0" max="' + SCRUB_RESOLUTION + '" value="0" oninput="' + PlayerHandle() + '.scrub(this.value);" ';
-	player_html += 'onmousedown="' + PlayerHandle()   + '.onStartedScrubbing();" ontouchstart="' + PlayerHandle() + '.onStartedScrubbing();" ';
-	player_html += 'onmouseup="'   + PlayerHandle()   + '.onFinishedScrubbing();" ontouchend="'  + PlayerHandle() + '.onFinishedScrubbing();" />';
-
-	player_html += '</div>';
-	player_html += '<div class="g5buttons" id="g5buttons' + that.id + '">';
-	player_html += '<button class="g5button g5prev" id="prev' + that.id + '"/>';
-	player_html += '<button class="g5button g5play" id="play' + that.id + '"/>';
-	player_html += '<button class="g5button g5stop" id="stop' + that.id + '"/>';
-	player_html += '<button class="g5button g5next" id="next' + that.id + '"/>';
-
-	if (isMobileBrowser)
-	{
-		player_html += '<button class="g5button volumedisabled" />';
-		player_html += '</div>';
-	}
-	else
-	{
-		player_html += '<input type="range" class="volume" name="gain" min="0" max="' + SCRUB_RESOLUTION + '" value="' + SCRUB_RESOLUTION + '" oninput="' + PlayerHandle() + '.setGain(this.value);" />';
-		player_html += '</div>';
-	}
-	player_html += '</div>';
-	document.getElementById(elem_id).innerHTML = player_html;
-
-	// css adjustments
-	if (!isMobileBrowser && navigator.userAgent.indexOf('Mac OS X') == -1)
-	{
-		document.getElementById("transportbar" + that.id).classList.add("g5meter-1pxup");
-		document.getElementById("g5buttons" + that.id).classList.add("g5buttons-1pxup");
-	}
-	if (isMobileBrowser)
-	{
-		document.getElementById("transportbar" + that.id).classList.add("g5transport-1pxup");
-	}
-
-	// set up button mappings
-	document.getElementById('prev' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].prev);
-	document.getElementById('play' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].playpause);
-	document.getElementById('stop' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].stop);
-	document.getElementById('next' + that.id).addEventListener("mousedown", GAPLESS5_PLAYERS[that.id].next);
-
-	// set up key mappings
-	if (options != null && 'mapKeys' in options)
-	{
-		that.mapKeys(options['mapKeys']);
-	}
-	window.addEventListener("keydown", function(e){
-		var keycode = e.keyCode;
-    	if (keycode in keyMappings)
-    	{
-    		keyMappings[keycode](e);
-    	}
-	});
-
-	SCRUB_WIDTH = document.getElementById("transportbar" + that.id).getBoundingClientRect().width;
-	enableButton('play', true);
-	enableButton('stop', true);
-
+var Init = function(options) {
 	// set up tracks
 	if (options != null && 'tracks' in options)
 	{
@@ -1005,7 +726,6 @@ var Init = function(elem_id, options) {
 	}
 
 	initialized = true;
-	updateDisplay();
 
 	// autostart if desired
 	var playOnLoad = (options != undefined) && ('playOnLoad' in options) && (options.playOnLoad == true);
@@ -1017,10 +737,10 @@ var Init = function(elem_id, options) {
 };
 
 if(document.readyState !== 'loading') {
-	Init(elem_id, options)	
+	Init(options)	
 }
 else {
-	document.addEventListener("DOMContentLoaded", () => Init(elem_id, options));
+	document.addEventListener("DOMContentLoaded", () => Init(options));
 }
 
 };
